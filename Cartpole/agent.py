@@ -27,10 +27,10 @@ class Agent(object):
             env: The RL environments from openAI gym
         '''
         self.env = env
-        self.memory = collections.deque(maxlen=5000)
+        self.memory = collections.deque(maxlen=10000)
         self.epsilon = 0.9
         self.epsilonDecayFactor = 0.99
-        self.epsilonMin = 0.3
+        self.epsilonMin = 0.4
         self.gamma = 0.9                             # discount factor for Q-learning
         self.lr = 0.001                              # Learning Rate
         self.replayBatchSize = 200                   # Number of memories to use for training
@@ -135,13 +135,50 @@ class Agent(object):
         else:
             return self.env.action_space.sample()
     
-    def remember(self, state, action, reward, next_state, done):
+    def calculatePriority(self, memoryInstance):
+        state, action, reward, next_state, done = memoryInstance
+        Q_sa = self.model.predict(np.array(state).reshape(1,4))[0][action]    # Q(s,a)
+        if not done:
+            next_Qs = self.model.predict(np.array(next_state).reshape(1,4))[0]  # [Q_next(s_next,a1), Q_next(s_next,a2)]
+            target = reward + self.gamma*max(next_Qs)         # This is what the Q(s,ai) should be (new estimate!)
+        else:
+            target = reward
+        priority = abs(target - Q_sa)
+        return priority
+    
+    
+    def remember(self, memoryInstance):
         '''
         Records a touple of (state, action, reward, next_state, done)
         into the agents memory.
         '''
-        self.memory.append((state, action, reward, next_state, done))
+        priority = self.calculatePriority(memoryInstance)
+        if (priority > 1.5): # If they are worthy!
+            self.memory.append(memoryInstance)
     
+    def doQLearningStep(self, memory, ETrace=True):
+        '''
+        Does one step of Q-Learning update
+        '''
+        state, action, reward, next_state, done = memory            # s, ai, r, s_next
+        Q_estimate = self.model.predict(np.array(state).reshape(1,4))[0]    # [Q(s,a1), Q(s,a2)]
+        if not done:
+            next_Qs = self.model.predict(np.array(next_state).reshape(1,4))[0]  # [Q_next(s_next,a1), Q_next(s_next,a2)]
+            target = reward + self.gamma*max(next_Qs)         # This is what the Q(s,ai) should be (new estimate!)
+        else:
+            target = reward
+        Q_estimate[action] = target   # Updating the Q_estimate to use the better estimate for action ai
+        if (ETrace):
+            stateBinNumber = self.getBinNumber(state)             # bin number corresponding to state
+            ET = self.ETrace[0][stateBinNumber]                   # Eligibility Trace for the bin
+            K.set_value(self.model.optimizer.lr, self.lr*ET)      # update the learning rate to incorporate eligibility trace
+        # Update the model parameters to fit the change    
+            self.model.fit(np.array(state).reshape(1,4),
+                           np.array(Q_estimate).reshape(1,2),
+                           nb_epoch=1,
+                           verbose=False)
+        
+        
     def replay(self, ETrace=True):
         '''
         This function is responsible for the learning 
@@ -162,22 +199,5 @@ class Agent(object):
                                                size=min(len(self.memory),self.replayBatchSize),
                                                replace=False)
         for i in memorySampleIndices:
-            state, action, reward, next_state, done = self.memory[i]            # s, ai, r, s_next
-            Q_estimate = self.model.predict(np.array(state).reshape(1,4))[0]    # [Q(s,a1), Q(s,a2)]
-            if not done:
-                next_Qs = self.model.predict(np.array(next_state).reshape(1,4))[0]  # [Q_next(s_next,a1), Q_next(s_next,a2)]
-                target = reward + self.gamma*max(next_Qs)         # This is what the Q(s,ai) should be (new estimate!)
-            else:
-                target = reward
-            Q_estimate[action] = target   # Updating the Q_estimate to use the better estimate for action ai
-            if (ETrace):
-                stateBinNumber = self.getBinNumber(state)             # bin number corresponding to state
-                ET = self.ETrace[0][stateBinNumber]                   # Eligibility Trace for the bin
-                K.set_value(self.model.optimizer.lr, self.lr*ET)      # update the learning rate to incorporate eligibility trace
-            # Update the model parameters to fit the change    
-            self.model.fit(np.array(state).reshape(1,4),
-                           np.array(Q_estimate).reshape(1,2),
-                           nb_epoch=1,
-                           verbose=False)
-        #decrese the epsilon after each episode
+            self.doQLearningStep(self.memory[i], ETrace)
         self.epsilon = self.epsilonDecayFactor * self.epsilon if self.epsilon > self.epsilonMin else self.epsilon 
