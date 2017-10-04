@@ -9,28 +9,33 @@ import time
 def argumentManager(argv):
     # Defalut values
     numEpisodes = 1
+    render = False
     try:
-        opts, args = getopt.getopt(argv[1:],"n:h",["numEpisodes=", "help"])
+        opts, args = getopt.getopt(argv[1:],"n:r:h",["numEpisodes=", "render", "help"])
     except getopt.GetoptError:
-        print('train.py -n <number of episodes> -e <minimum epsilon>')
+        print('train.py -n <number of episodes>')
         
     for opt, arg in opts:
                 if opt in ("-n", "--numEpisodes"):
                     numEpisodes = int(arg)
+                elif opt in ("-r", "--render"):
+                    render = (arg=="True")
                 elif opt in ("-h", "--help"):
-                    print('Usage: train.py -n <number of episodes> -e <minimum episode>')
+                    print('Usage: train.py -n <number of episodes>')
                     sys.exit()
-    return [numEpisodes]
+    return [numEpisodes, render]
 
 def main(argv):
     args = argumentManager(argv)
     numEpisodes = args[0]
+    render = args[1]
     env = gym.make('CartPole-v0')
     agent = AI.Agent(env=env)
     for episode in range(numEpisodes):
         state = env.reset()
-        for t in range(5000): 
-            # env.render()
+        for t in range(5000):
+            if(render):
+                env.render()
             agent.incrementETrace(state, replace=True)
             action = agent.choose_action(np.array(state).reshape(1,4))  # Choose an action
             next_state, reward, done, info = env.step(action)           # Observe next_state, reward
@@ -46,6 +51,7 @@ def main(argv):
             agent.model.save_weights("./weights/weight_minEps{}_numEpisodes{}.h5".format(agent.epsilonMin, numEpisodes))
         agent.decayETrace()
         agent.replay(ETrace=True)
-    # env.render(close=True)
+    if(render):    
+        env.render(close=True)
 if __name__ == "__main__":
     main(sys.argv)

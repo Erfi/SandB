@@ -30,7 +30,7 @@ class Agent(object):
         self.memory = collections.deque(maxlen=10000)
         self.epsilon = 0.9
         self.epsilonDecayFactor = 0.99
-        self.epsilonMin = 0.4
+        self.epsilonMin = 0.3
         self.gamma = 0.9                             # discount factor for Q-learning
         self.lr = 0.001                              # Learning Rate
         self.replayBatchSize = 200                   # Number of memories to use for training
@@ -77,7 +77,7 @@ class Agent(object):
 
         return bin_number
         
-    def incrementETrace(self, state, replace=False):
+    def incrementETrace(self, state, replace=True):
         '''
         Increments the eligibility trace for the 
         given state using either the 
